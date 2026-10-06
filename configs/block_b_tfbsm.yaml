@@ -1,0 +1,51 @@
+block_name: "block_b_tfbsm"
+strike: 100.0
+
+seeds:
+  dataset: 42
+  training: 1337
+  evaluation: 2026
+
+domains:
+  interpolation:
+    alpha: [0.45, 0.95]
+    S: [70.0, 130.0]
+    sigma: [0.15, 0.40]
+    T: [0.2, 1.5]
+    r: [0.02, 0.06]
+  extrapolation:
+    alpha: [0.15, 0.40]
+    S: [[40.0, 70.0], [130.0, 180.0]]
+    sigma: [0.45, 0.70]
+    T: [1.6, 3.0]
+    r: [0.06, 0.10]
+
+dataset_sizes:
+  train: 15000
+  val: 3000
+  test_in_domain: 5000
+  test_extrapolation: 3000
+
+reference_l1:
+  Nt: 2000
+  Ns: 2000
+  S_max_multiplier: 4.0
+  mesh_grading_exponent_ratio: true
+
+picard:
+  Nt: 100
+  Ns: 500
+  tol: 1.0e-6
+  max_iter: 40
+
+neural_sde:
+  hidden_layers: 3
+  hidden_units: 64
+  activation: "SiLU"
+  time_steps: 128
+  mc_paths: 5000
+  learning_rate: 1.0e-3
+  min_learning_rate: 1.0e-5
+  weight_decay: 1.0e-4
+  batch_size: 256
+  epochs: 1000
