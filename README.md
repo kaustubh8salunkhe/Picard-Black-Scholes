@@ -1,6 +1,6 @@
 # Picard vs. Neural SDE: Option Pricing Benchmark
 
-A reproducible computational benchmark comparing **Picard Iterative Methods** against **Learned Neural SDEs (NSDE)** for European call option pricing under standard Black–Scholes–Merton (BSM) and Time-Fractional Black–Scholes (TFBSM) formulations.
+A reproducible computational benchmark comparing **Picard Iterative Methods** against **Learned Neural SDEs (NSDE)** for European call option pricing under standard Black–Scholes–Merton (BSM) formulation.
 
 This repository implements the pre-registered experimental configuration defined in `EXPERIMENT_SPEC.md` for the October 6 research sprint checkpoint.
 
