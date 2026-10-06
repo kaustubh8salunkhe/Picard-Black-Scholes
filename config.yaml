@@ -1,0 +1,106 @@
+experiment_metadata:
+  status: "FROZEN"
+  project: "picard-vs-nsde-quant-sprint"
+  checkpoint_date: "2026-10-06"
+  master_seed: 42
+  device: "cuda" # falls back to cpu if unavailable
+
+block_a_ordinary_bsm:
+  name: "Ordinary_Black_Scholes"
+  data:
+    sampling_method: "latin_hypercube"
+    train_size: 10000
+    val_size: 2000
+    test_size: 2000
+    in_distribution_domain:
+      S0: [80.0, 120.0]
+      K: 100.0
+      T: [0.1, 2.0]
+      sigma: [0.10, 0.50]
+      r: [0.01, 0.08]
+    extrapolation_domain:
+      S0: [[40.0, 79.0], [121.0, 180.0]]
+      T: [2.5, 5.0]
+      sigma: [0.55, 1.20]
+  reference_solver:
+    method: "analytical_closed_form"
+    precision: "float64"
+    tolerance: 1e-14
+  picard_solver:
+    spatial_nodes: 200
+    time_quadrature_nodes: 100
+    stopping_tolerance: 1e-6
+    max_iterations: 25
+  learned_nsde:
+    drift_net:
+      hidden_layers: [64, 64, 64]
+      activation: "silu"
+    diffusion_net:
+      hidden_layers: [64, 64, 64]
+      activation: "silu"
+      output_activation: "softplus"
+    solver: "euler_maruyama"
+    time_steps: 100
+    mc_paths: 4096
+    training:
+      optimizer: "AdamW"
+      lr: 1e-3
+      min_lr: 1e-5
+      weight_decay: 1e-4
+      batch_size: 256
+      epochs: 100
+
+block_b_fractional_bsm:
+  name: "Fractional_Grid_Black_Scholes"
+  data:
+    sampling_method: "latin_hypercube"
+    train_size: 10000
+    val_size: 2000
+    test_size: 2000
+    in_distribution_domain:
+      S0: [80.0, 120.0]
+      K: 100.0
+      T: [0.1, 1.5]
+      sigma: [0.15, 0.45]
+      r: [0.02, 0.06]
+      alpha: [0.60, 0.95]
+    extrapolation_domain:
+      alpha: [[0.30, 0.55], [0.96, 0.99]]
+      S0: [[50.0, 79.0], [121.0, 160.0]]
+      T: [1.6, 3.0]
+  reference_solver:
+    method: "caputo_L1_graded_finite_difference"
+    temporal_nodes: 1000
+    spatial_nodes: 1000
+    mesh_grading_factor: 2.0
+    relative_convergence_tolerance: 1e-5
+  picard_solver:
+    time_nodes: 100
+    fractional_quadrature: "product_integration"
+    stopping_tolerance: 1e-5
+    max_iterations: 30
+  learned_nsde:
+    network:
+      hidden_layers: [64, 64, 64, 64]
+      units: 64
+      activation: "silu"
+    kernel_approximation: "cholesky_volterra"
+    time_steps: 100
+    mc_paths: 4096
+    training:
+      optimizer: "AdamW"
+      lr: 1e-3
+      min_lr: 1e-5
+      weight_decay: 1e-4
+      batch_size: 256
+      epochs: 100
+
+benchmarking_protocol:
+  warmup_runs: 10
+  timed_repetitions: 50
+  timer: "time.perf_counter_ns"
+  metrics: ["RMSE", "MARE", "L_inf", "runtime_median_ms", "runtime_iqr_ms"]
+  failure_thresholds:
+    max_price_bound: 1e4
+    nan_inf_allowed: false
+    no_arbitrage_violation_allowed: false
