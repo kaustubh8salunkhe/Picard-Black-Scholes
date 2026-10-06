@@ -1,107 +1,257 @@
-# Pre-Registration Specification: Picard Iteration vs. Neural SDE Benchmark
 
-**Status:** FROZEN  
-**Target Checkpoint:** October 6 Sprint Deliverable  
-**Core Rule:** All comparative outcomes reported in the sprint memo are generated exclusively under these pinned configurations. Any hyperparameter adjustments or architectural sweeps performed post-inspection must be categorized under "Exploratory / Ablation Analysis".
+# EXPERIMENT_SPEC.md: Frozen Benchmark Specification
 
----
+**Status:** FROZEN
 
-## 1. Block A: Ordinary Black–Scholes Model (BSM)
+**Commit Target:** Pre-inspection Baseline
 
-### Mathematical Formulation
-The European Call option price $V(S, t)$ satisfies the standard Black–Scholes PDE:
-$$\frac{\partial V}{\partial t} + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + r S \frac{\partial V}{\partial S} - r V = 0, \quad V(S, T) = \max(S - K, 0)$$
-Or in log-price space $x = \ln(S/K)$, $\tau = T - t$, $u(x, \tau) = e^{r\tau} V/K$:
-$$\frac{\partial u}{\partial \tau} = \frac{1}{2}\sigma^2 \frac{\partial^2 u}{\partial x^2} + \left(r - \frac{1}{2}\sigma^2\right)\frac{\partial u}{\partial x}$$
-
-### Pinned Parameters & Rules
-1. **Parameter Domain & Sampling:**
-   - In-Distribution Hypercube:
-     - $S_0 \in [80, 120]$, $K = 100$ (normalized)
-     - Maturity $T \in [0.1, 2.0]$ years
-     - Volatility $\sigma \in [0.10, 0.50]$
-     - Risk-free rate $r \in [0.01, 0.08]$
-   - Sampling: Latin Hypercube Sampling (LHS) across the 4D parameter space.
-   - Dataset Size: $N_{\text{train}} = 10{,}000$, $N_{\text{val}} = 2{,}000$, $N_{\text{test}} = 2{,}000$ (fixed seeds).
-2. **Exact Numerical Reference:**
-   - Analytical closed-form Black–Scholes pricing formula evaluated via `scipy.special.ndtr` with double precision (`float64`).
-   - Reference tolerance: Machine precision ($\epsilon_{\text{tol}} \approx 10^{-14}$).
-3. **Picard Iterative Scheme & Stopping Rule:**
-   - Fixed-point integral operator formulation:
-     $$u^{(k+1)}(\tau, x) = u^{(0)}(x) + \int_0^\tau \mathcal{L}_{\text{BSM}}[u^{(k)}](s, x) \, ds$$
-   - Spatial discretization: Chebyshev collocation grid with $N_x = 200$ nodes on $x \in [-3, 3]$.
-   - Time integration: 8th-order Gauss–Legendre quadrature ($N_\tau = 100$ steps).
-   - Stopping rule: $\Vert{}u^{(k+1)} - u^{(k)}\Vert{}_\infty < 10^{-6}$ or maximum iterations $K_{\max} = 25$.
-4. **Learned Neural SDE (NSDE) Architecture:**
-   - Drift network $f_\theta(t, X_t)$: MLP with 3 hidden layers, 64 units/layer, SiLU activations.
-   - Diffusion network $g_\phi(t, X_t)$: MLP with 3 hidden layers, 64 units/layer, Softplus output activation (ensuring strictly positive diffusion).
-   - SDE Solver: Euler–Maruyama discretization with fixed $\Delta t = T / 100$, 4,096 Monte Carlo sample paths per valuation.
-5. **Matched Training & Compute Budget:**
-   - Optimizer: AdamW ($\text{lr} = 10^{-3}$, cosine decay to $10^{-5}$, weight decay $10^{-4}$).
-   - Batch size: 256.
-   - Hard training budget: 100 epochs (approx. 3,900 gradient steps) or a hard compute cap of 15 minutes on 1x NVIDIA GPU / matched CPU.
-6. **Random Seeds:**
-   - Master seed: `42` (pinned across Python `random`, NumPy, PyTorch, and CUDA deterministic flags).
-7. **Pricing Error & Convergence Metrics:**
-   - Pricing Error: Root Mean Squared Error (RMSE), Mean Absolute Relative Error (MARE: $\frac{1}{N}\sum \frac{\vert{}\hat{V} - V^*\vert{}}{V^*}$), and Max Absolute Error ($L_\infty$).
-   - Convergence: Picard contraction quotient $\rho_k = \frac{\Vert{}u^{(k+1)} - u^{(k)}\Vert{}_\infty}{\Vert{}u^{(k)} - u^{(k-1)}\Vert{}_\infty}$; NSDE epoch-wise loss and validation RMSE curves.
-8. **Runtime Measurement:**
-   - 10 warm-up evaluations followed by 50 timed runs using `time.perf_counter_ns()`. GPU synchronized via `torch.cuda.synchronize()`. Report median and Interquartile Range (IQR).
-9. **Extrapolation Regime (Out-of-Distribution):**
-   - Moneyness: Deep OTM/ITM $S_0 \in [40, 79] \cup [121, 180]$.
-   - Maturity: $T \in [2.5, 5.0]$ years.
-   - Extreme Volatility: $\sigma \in [0.55, 1.20]$.
-10. **Explicit Failure Criteria:**
-    - Divergence: Output containing NaN, Inf, or $\vert{}V\vert{} > 10^4$.
-    - Arbitrage violation: Negative option price ($V < 0$), lower bound violation ($V < \max(0, S - K e^{-rT})$), or negative delta ($\partial V/\partial S < 0$).
-    - Stalling: Picard iteration failing to reach $10^{-6}$ tolerance within 25 steps; NSDE validation relative error $> 10\%$ at epoch 100.
+**Scope:** Picard Iteration vs. Neural SDE Benchmarking (Ordinary BSM and Time-Fractional BSM)
 
 ---
 
-## 2. Block B: Time-Fractional Black–Scholes Model (Fractional-Grid)
+## 1. Governance and Protocol Rules
 
-### Mathematical Formulation
-The subdiffusive time-fractional Black–Scholes PDE with Caputo fractional derivative of order $\alpha \in (0, 1]$:
-$${}^C D_t^\alpha V + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + r S \frac{\partial V}{\partial S} - r V = 0, \quad V(S, T) = \max(S - K, 0)$$
-where ${}^C D_t^\alpha V(t) = \frac{1}{\Gamma(1-\alpha)} \int_0^t (t - s)^{-\alpha} \frac{\partial V}{\partial s} \, ds$.
+1. **Pre-Registration Freeze:** All data sampling, network architectures, solver tolerances, training budgets, and evaluation routines defined in this specification are locked prior to inspecting comparative outcomes.
+2. **Exploratory Policy:** Any hyperparameter tuning, loss function adjustment, or architectural modification executed after inspecting initial baseline outcomes must not overwrite these baselines. Such additions must be committed under branch/tag `exploratory/*` and documented in a separate section of the October 6 research memo.
+3. **Model Separation:** Block A (Ordinary Black–Scholes–Merton) and Block B (Time-Fractional Black–Scholes) are treated as distinct experimental blocks. Solvers, references, and surrogate models are isolated into separate execution pipelines.
 
-### Pinned Parameters & Rules
-1. **Parameter Domain & Sampling:**
-   - In-Distribution Hypercube:
-     - $S_0 \in [80, 120]$, $K = 100$
-     - Maturity $T \in [0.1, 1.5]$ years
-     - Volatility $\sigma \in [0.15, 0.45]$
-     - Risk-free rate $r \in [0.02, 0.06]$
-     - Fractional order $\alpha \in [0.60, 0.95]$
-   - Sampling: Latin Hypercube Sampling (LHS) across the 5D parameter space.
-   - Dataset Size: $N_{\text{train}} = 10{,}000$, $N_{\text{val}} = 2{,}000$, $N_{\text{test}} = 2{,}000$.
-2. **Exact Numerical Reference:**
-   - High-resolution finite difference solver utilizing L1 discretization for the Caputo derivative on a graded temporal mesh ($N_t = 1{,}000$, grading parameter $r_{\text{mesh}} = 2.0$) and second-order central spatial differences ($N_s = 1{,}000$).
-   - Reference verification tolerance: Relative Richardson extrapolation error $\Vert{}V_{\Delta t} - V_{\Delta t/2}\Vert{}_\infty / \Vert{}V_{\Delta t}\Vert{}_\infty < 10^{-5}$.
-3. **Fractional Picard Iterative Scheme & Stopping Rule:**
-   - Volterra fractional integral formulation:
-     $$u^{(k+1)}(t, x) = u(0, x) + \frac{1}{\Gamma(\alpha)} \int_0^t (t - s)^{\alpha - 1} \mathcal{L}[u^{(k)}](s, x) \, ds$$
-   - Discrete evaluation: Product integration / fractional Adams–Bashforth–Moulton scheme on $N_t = 100$ temporal grid points.
-   - Stopping rule: $\Vert{}u^{(k+1)} - u^{(k)}\Vert{}_\infty < 10^{-5}$ or maximum iterations $K_{\max} = 30$.
-4. **Learned Fractional NSDE Architecture:**
-   - Continuous-time Markovian approximation / Volterra-type Neural SDE conditioned on $[t, X_t, \alpha, \sigma, r]$.
-   - Network: 4 hidden layers, 64 units/layer, SiLU activations.
-   - Numerical integration: Euler–Maruyama scheme with Cholesky decomposition of the fractional kernel covariance, 4,096 Monte Carlo paths.
-5. **Matched Training & Compute Budget:**
-   - Optimizer: AdamW ($\text{lr} = 10^{-3}$, cosine decay, weight decay $10^{-4}$).
-   - 100 epochs, batch size 256 (identical step count and GPU wall-clock cap as Block A).
-6. **Random Seeds:**
-   - Master seed: `42`.
-7. **Pricing Error & Convergence Metrics:**
-   - RMSE, MARE, $L_\infty$ error against the high-resolution L1 numerical reference.
-   - Picard empirical contraction rate: $\hat{L}(\alpha) = \frac{\Vert{}u^{(k+1)} - u^{(k)}\Vert{}_\infty}{\Vert{}u^{(k)} - u^{(k-1)}\Vert{}_\infty}$ recorded across fractional orders $\alpha$.
-8. **Runtime Measurement:**
-   - 10 warm-up runs, 50 timed evaluations via `time.perf_counter_ns()`, GPU synchronized. Median and IQR reported.
-9. **Extrapolation Regime (Out-of-Distribution):**
-   - Fractional Order Extremes: $\alpha \in [0.30, 0.55] \cup [0.96, 0.99]$.
-   - Moneyness: $S_0 \in [50, 79] \cup [121, 160]$.
-   - Maturity: $T \in [1.6, 3.0]$ years.
-10. **Explicit Failure Criteria:**
-    - Kernel singularity blow-up ($s \to t$) or NaN/Inf values.
-    - Loss of contractivity in Picard iteration ($\hat{L} \ge 1.0$).
-    - Monotonicity violation with respect to fractional order ($\partial V/\partial \alpha$ non-smooth or unphysical oscillation).
+---
+
+## 2. Block A: Ordinary Black–Scholes–Merton (BSM)
+
+### 2.1 Governing Equation and Boundary Conditions
+
+Standard European call option value $V(t, S)$ governed by:
+
+
+$$\frac{\partial V}{\partial t} + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + r S \frac{\partial V}{\partial S} - r V = 0$$
+
+Boundary conditions:
+
+* $V(T, S) = \max(S - K, 0)$
+* $V(t, 0) = 0$
+* $\lim_{S \to \infty} [V(t, S) - (S - K e^{-r(T-t)})] = 0$
+
+### 2.2 Numerical Reference (Ground Truth)
+
+* **Solver:** Analytical Black–Scholes formula in double precision (`float64`).
+* **Cumulative Normal Implementation:** High-precision polynomial approximation (`scipy.special.ndtr` / standard Faddeeva-based implementation).
+* **Reference Tolerance:** Machine epsilon ($< 10^{-15}$).
+
+### 2.3 Picard Iteration Formulation
+
+* **Transformation:** Log-moneyness $x = \ln(S/K)$, time-to-maturity $\tau = T - t$, $u(\tau, x) = e^{r\tau} V/K$.
+* **Integral Operator:** Inverted heat operator using the Gaussian kernel $G(\tau, x)$:
+
+$$u^{(k+1)}(\tau, x) = u^{(0)}(x) + \int_0^\tau \int_{-\infty}^{\infty} G(\tau - s, x - y) \mathcal{N}\left(u^{(k)}(s, y)\right) dy \, ds$$
+
+
+* **Spatial Discretization:** Uniform grid on $x \in [-2.5, 2.5]$ with $N_x = 1000$ points.
+* **Temporal Integration:** Trapezoidal quadrature with $N_\tau = 200$ time steps.
+* **Stopping Criterion:**
+
+$$\Vert{}u^{(k+1)} - u^{(k)}\Vert{}_\infty < 10^{-7} \quad \text{or} \quad k \ge 50$$
+
+
+
+### 2.4 Learned Neural SDE Architecture
+
+* **Formulation:** Latent SDE with risk-neutral drift dynamics and neural diffusion:
+
+$$d X_t = r X_t dt + \sigma_\theta(t, X_t) X_t dW_t, \quad V_\theta(0, S_0) = e^{-rT} \mathbb{E}\left[\max(X_T - K, 0)\right]$$
+
+
+* **Discretization:** Euler–Maruyama scheme with $N_t = 100$ uniform intervals.
+* **Network Backbone ($\sigma_\theta$):**
+* Topology: Multi-Layer Perceptron (MLP)
+* Layers: 3 hidden layers, 64 hidden units per layer
+* Activation: SiLU (Swish)
+* Output Layer: Linear with Softplus activation $+ 10^{-4}$ (strictly positive diffusion)
+
+
+* **Training Objective:** Mean Squared Error on analytical BSM prices across training samples:
+
+$$\mathcal{L}(\theta) = \frac{1}{B} \sum_{i=1}^B \left( \hat{V}_\theta(t_i, S_i) - V_{\text{analytical}}(t_i, S_i) \right)^2$$
+
+
+
+### 2.5 Parameter Domain and Sampling
+
+Fixed Strike: $K = 100$.
+
+| Parameter | Interpolation Domain (Train / Val / Test) | Extrapolation Domain (Stress Testing) |
+| --- | --- | --- |
+| Spot Price ($S$) | $[60, 140]$ | $[30, 60) \cup (140, 200]$ |
+| Volatility ($\sigma$) | $[0.10, 0.40]$ | $[0.45, 0.80]$ |
+| Maturity ($T$) | $[0.1, 2.0]$ years | $[2.1, 4.0]$ years |
+| Risk-free Rate ($r$) | $[0.01, 0.08]$ | $[0.08, 0.15]$ |
+
+* **Sampling Scheme:** Sobol quasi-random sequence.
+* **Dataset Sizes:**
+* Training: 10,000 points
+* Validation: 2,000 points
+* In-Domain Test: 5,000 points
+* Out-of-Distribution (OOD) Extrapolation Test: 2,500 points
+
+
+
+---
+
+## 3. Block B: Time-Fractional Black–Scholes Model (TFBSM)
+
+### 3.1 Governing Equation
+
+Time-fractional Black–Scholes equation featuring a Caputo fractional time derivative of order $\alpha \in (0, 1]$ and standard spatial diffusion:
+
+
+$${}_0^C D_t^\alpha V(t, S) + \frac{1}{2}\sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + r S \frac{\partial V}{\partial S} - r V = 0$$
+
+Where the Caputo derivative is defined as:
+
+
+$${}_0^C D_t^\alpha V(t, S) = \frac{1}{\Gamma(1-\alpha)} \int_0^t (t - s)^{-\alpha} \frac{\partial V(s, S)}{\partial s} ds$$
+
+### 3.2 Numerical Reference (Ground Truth)
+
+* **Temporal Scheme:** L1 approximation of the Caputo fractional derivative on a graded mesh:
+
+$$t_j = T \left(\frac{j}{N_t}\right)^r, \quad r = (2-\alpha)/\alpha, \quad N_t = 2000$$
+
+
+* **Spatial Scheme:** Second-order central finite differences on non-uniform log-space grid ($N_S = 2000$).
+* **Linear System Solver:** Tridiagonal matrix algorithm (Thomas algorithm) at each time level.
+* **Convergence Verification:** Mesh refinement study verifying temporal order $\mathcal{O}(\Delta t^{2-\alpha})$ and spatial order $\mathcal{O}(\Delta x^2)$.
+* **Reference Tolerance:** Discretization tolerance set such that grid-doubling relative difference satisfies:
+
+$$\frac{\Vert{}V_{2N} - V_N\Vert{}_2}{\Vert{}V_N\Vert{}_2} < 5 \times 10^{-7}$$
+
+
+
+### 3.3 Picard Iteration Formulation
+
+* **Fractional Volterra Representation:**
+
+$$V(t, S) = V(0, S) + \frac{1}{\Gamma(\alpha)} \int_0^t (t - s)^{\alpha - 1} \mathcal{L}_{BS} V(s, S) \, ds$$
+
+
+
+where $\mathcal{L}_{BS} = -\left(\frac{1}{2}\sigma^2 S^2 \partial_{SS} + r S \partial_S - r I\right)$.
+* **Iterative Step:**
+
+$$V^{(k+1)}(t_n, \cdot) = V(0, \cdot) + \frac{1}{\Gamma(\alpha)} \sum_{j=0}^{n-1} w_{j, n}^{(\alpha)} \mathcal{L}_{BS} V^{(k)}(t_j, \cdot)$$
+
+
+
+using product trapezoidal quadrature weights $w_{j, n}^{(\alpha)}$.
+* **Stopping Criterion:**
+
+$$\max_{n} \Vert{}V^{(k+1)}(t_n, \cdot) - V^{(k)}(t_n, \cdot)\Vert{}_\infty < 10^{-6} \quad \text{or} \quad k \ge 40$$
+
+
+
+### 3.4 Learned Neural Volterra / Fractional NSDE Architecture
+
+* **Formulation:** Discretized Volterra SDE incorporating a power-law convolutional kernel:
+
+$$X_t = X_0 + \int_0^t b_\theta(s, X_s) ds + \int_0^t \frac{(t-s)^{\alpha - 1/2}}{\Gamma(\alpha + 1/2)} \sigma_\phi(s, X_s) dW_s$$
+
+
+* **Discretization:** Hybrid convolution-Euler scheme evaluated over $N_t = 128$ steps.
+* **Architecture:**
+* Drift network $b_\theta$: 3 hidden layers, 64 units, SiLU
+* Volatility network $\sigma_\phi$: 3 hidden layers, 64 units, SiLU, Softplus output activation
+
+
+* **Kernel Order ($\alpha$):** Explicit scalar input appended to coordinates $(t, X_t, \alpha)$.
+
+### 3.5 Parameter Domain and Sampling
+
+Fixed Strike: $K = 100$.
+
+| Parameter | Interpolation Domain (Train / Val / Test) | Extrapolation Domain (Stress Testing) |
+| --- | --- | --- |
+| Fractional Order ($\alpha$) | $[0.45, 0.95]$ | $[0.15, 0.40)$ (Extreme memory regime) |
+| Spot Price ($S$) | $[70, 130]$ | $[40, 70) \cup (130, 180]$ |
+| Volatility ($\sigma$) | $[0.15, 0.40]$ | $[0.45, 0.70]$ |
+| Maturity ($T$) | $[0.2, 1.5]$ years | $[1.6, 3.0]$ years |
+| Risk-free Rate ($r$) | $[0.02, 0.06]$ | $[0.06, 0.10]$ |
+
+* **Sampling Scheme:** Sobol sequence across 5-dimensional space $(S, \sigma, T, r, \alpha)$.
+* **Dataset Sizes:**
+* Training: 15,000 points
+* Validation: 3,000 points
+* In-Domain Test: 5,000 points
+* Extrapolation Test: 3,000 points
+
+
+
+---
+
+## 4. Shared Training and Compute Budget
+
+* **Hardware Target:** Single NVIDIA RTX 4090 / A100 GPU (or pinned 8-core CPU allocation for CPU reference benchmarks).
+* **Optimizer:** AdamW ($\beta_1 = 0.9, \beta_2 = 0.999$, weight decay $= 10^{-4}$).
+* **Learning Rate Schedule:** Initial $\eta_0 = 10^{-3}$, cosine decay down to $\eta_{\min} = 10^{-5}$ without restarts.
+* **Batch Size:** 256.
+* **Total Epochs:** 1,000 epochs (fixed; no early stopping to preserve matched compute trajectories).
+* **RNG Seeds:**
+* Dataset Partitioning & Sampling: `Seed = 42`
+* Model Weight Initialization: `Seed = 1337`
+* Evaluation Path Generation: `Seed = 2026`
+
+
+
+---
+
+## 5. Pricing Error and Convergence Metrics
+
+1. **Root Mean Squared Error (RMSE):**
+
+$$\text{RMSE} = \sqrt{\frac{1}{M} \sum_{m=1}^M \left( \hat{V}_m - V_m^{\text{ref}} \right)^2}$$
+
+
+2. **Mean Absolute Percentage Error (MAPE):**
+
+$$\text{MAPE} = \frac{100\%}{M} \sum_{m=1}^M \left\vert{} \frac{\hat{V}_m - V_m^{\text{ref}}}{V_m^{\text{ref}}} \right\vert{} \quad (\text{filtered for } V_m^{\text{ref}} \ge 0.50)$$
+
+
+3. **Maximum Absolute Error (MaxAE):**
+
+$$\text{MaxAE} = \max_{1 \le m \le M} \vert{}\hat{V}_m - V_m^{\text{ref}}\vert{}$$
+
+
+4. **Picard Contraction Rate Metric:**
+
+$$\hat{L}_k = \frac{\Vert{}V^{(k+1)} - V^{(k)}\Vert{}_\infty}{\Vert{}V^{(k)} - V^{(k-1)}\Vert{}_\infty}$$
+
+
+
+---
+
+## 6. Runtime Measurement Protocol
+
+1. **Execution Mode:** Isolated process pinned to dedicated threads/device.
+2. **Warm-Up:** 20 complete evaluation passes discarded prior to logging.
+3. **Measurement:** 100 consecutive runs timed using `time.perf_counter_ns()`.
+4. **GPU Synchronization:** `torch.cuda.synchronize()` explicitly invoked before and after timer boundaries.
+5. **Reported Statistics:** Median execution time, 5th percentile, and 95th percentile latency (milliseconds per 1,000 pricing evaluations).
+
+---
+
+## 7. Explicit Failure Criteria
+
+A solver run or model output is flagged as a **Failure** if it triggers any of the following:
+
+1. **Numerical Breakdown:** Generation of `NaN`, `Inf`, or floating-point overflow during training, iteration, or inference.
+2. **Arbitrage Bound Violation:**
+* Violation of lower call bound: $\hat{V} < \max(S - K e^{-rT}, 0) - 10^{-4}$
+* Violation of upper bound: $\hat{V} > S + 10^{-4}$
+
+
+3. **Monotonicity Violation (Delta Anomaly):**
+
+$$\frac{\partial \hat{V}}{\partial S} < -10^{-3} \quad \text{or} \quad \frac{\partial \hat{V}}{\partial S} > 1 + 10^{-3}$$
+
+
+4. **Picard Divergence:** Spectral growth $\hat{L}_k \ge 1.0$ for three consecutive iterations, or $\Vert{}V^{(k)}\Vert{}_\infty > 10 \cdot S_0$.
+5. **Runtime Timeout:** Execution latency exceeding 10x the median reference solver runtime for a matched test batch.
