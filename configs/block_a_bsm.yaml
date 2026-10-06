@@ -1,0 +1,44 @@
+block_name: "block_a_bsm"
+strike: 100.0
+
+seeds:
+  dataset: 42
+  training: 1337
+  evaluation: 2026
+
+domains:
+  interpolation:
+    S: [60.0, 140.0]
+    sigma: [0.10, 0.40]
+    T: [0.1, 2.0]
+    r: [0.01, 0.08]
+  extrapolation:
+    S: [[30.0, 60.0], [140.0, 200.0]]
+    sigma: [0.45, 0.80]
+    T: [2.1, 4.0]
+    r: [0.08, 0.15]
+
+dataset_sizes:
+  train: 10000
+  val: 2000
+  test_in_domain: 5000
+  test_extrapolation: 2500
+
+picard:
+  spatial_grid_size: 1000
+  temporal_steps: 200
+  x_domain: [-2.5, 2.5]
+  tol: 1.0e-7
+  max_iter: 50
+
+neural_sde:
+  hidden_layers: 3
+  hidden_units: 64
+  activation: "SiLU"
+  time_steps: 100
+  mc_paths: 10000
+  learning_rate: 1.0e-3
+  min_learning_rate: 1.0e-5
+  weight_decay: 1.0e-4
+  batch_size: 256
+  epochs: 1000
