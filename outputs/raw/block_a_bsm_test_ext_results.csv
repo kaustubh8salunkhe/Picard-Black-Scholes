@@ -1,0 +1,5 @@
+S,sigma,T,r,K,ref_price,picard_price,picard_iters,picard_contraction,nsde_price,picard_arb_violation,nsde_arb_violation
+35.00,0.55,3.20,0.090,100.0,1.841203,1.841208,18,0.582,-0.041200,False,True
+42.50,0.60,2.50,0.110,100.0,3.124890,3.124894,17,0.560,2.684120,False,False
+165.00,0.48,2.80,0.085,100.0,92.481902,92.481895,16,0.531,94.120500,False,False
+185.00,0.70,3.50,0.120,100.0,128.910245,128.910230,19,0.612,131.450120,False,False
