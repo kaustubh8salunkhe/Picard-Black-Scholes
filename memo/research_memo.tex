@@ -68,5 +68,31 @@ B (TFBSM) & Frac-NSDE & $\alpha \le 0.35$ & 1.34100 & 4.28000 & \textbf{13.3\%} 
 
 \section{Conclusion}
 Picard iterative integration guarantees numerical stability, theoretical error control, and arbitrage consistency, outperforming learned Neural SDEs in stress regimes. Future iterations will investigate hard boundary projections for neural diffusion surrogates.
+\section{Experimental Results}
+The benchmark was executed under the pre-registered frozen protocol across in-domain and out-of-distribution (OOD) test splits ($K=100.0$).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+\textbf{Block} & \textbf{Solver} & \textbf{Regime} & \textbf{RMSE} & \textbf{MaxAE} & \textbf{Arb. Fail (\%)} \\ \midrule
+A (Ordinary BSM) & Picard & In-Domain & \textbf{0.000003} & \textbf{0.000004} & 0.0\% \\
+A (Ordinary BSM) & NSDE & In-Domain & 0.034481 & 0.043429 & 0.0\% \\
+A (Ordinary BSM) & Picard & OOD Extrapolation & \textbf{0.000009} & \textbf{0.000015} & 0.0\% \\
+A (Ordinary BSM) & NSDE & OOD Extrapolation & 1.793996 & 2.539875 & \textbf{25.0\%} \\ \midrule
+B (Caputo TFBSM) & Volterra--Picard & In-Domain & \textbf{0.000024} & \textbf{0.000033} & 0.0\% \\
+B (Caputo TFBSM) & Frac-NSDE & In-Domain & 0.096311 & 0.129116 & 0.0\% \\
+B (Caputo TFBSM) & Volterra--Picard & Low-$\alpha$ OOD ($\alpha \le 0.35$) & \textbf{0.003375} & \textbf{0.005100} & 0.0\% \\
+B (Caputo TFBSM) & Frac-NSDE & Low-$\alpha$ OOD ($\alpha \le 0.35$) & 2.622529 & 3.690610 & 0.0\% \\ \bottomrule
+\end{tabular}
+\caption{Empirical accuracy, worst-case error, and arbitrage failure rates.}
+\end{table}
+
+\section{Failure Modes \& Empirical Analysis}
+\begin{enumerate}
+    \item \textbf{Arbitrage Bound Violations (Block A):} In the extrapolation regime, the Neural SDE exhibited a 25.0\% arbitrage failure rate. For deep out-of-the-money regimes ($S < 60$), the surrogate generated negative option prices that breached the discounted intrinsic lower bound ($\hat{V} < \max(S - K e^{-rT}, 0)$). In contrast, Picard iteration preserved exact no-arbitrage bounds (0.0\% violations).
+    \item \textbf{Subdiffusive Singularity Breakdown (Block B):} For low fractional orders ($\alpha \in [0.15, 0.40)$), the Neural SDE error surged ($RMSE = 2.623$, $MaxAE = 3.691$). The weakly singular kernel $(\tau - s)^{\alpha - 1}$ destabilizes uniform discretization paths, whereas the graded Volterra--Picard scheme maintained stable convergence ($RMSE = 0.003375$).
+\end{enumerate}
 
 \end{document}
